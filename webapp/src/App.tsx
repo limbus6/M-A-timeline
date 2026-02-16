@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { calculateSchedule, injectVddTasks, compressSchedule } from './lib/logic';
 import type { Project, Task } from './lib/logic';
 import { getProjectByTemplateName } from './lib/templates';
-import { generateExcel } from './lib/exporter';
+import { exportToExcel } from './lib/exporter';
 import { Gantt } from './components/Gantt';
 import { TaskTable } from './components/TaskTable';
 import { Download, Calendar, Settings, List, BarChart3, Globe, ShieldAlert, Menu, X, ChevronDown, Check } from 'lucide-react';
@@ -116,16 +116,15 @@ function App() {
 
   const handleExport = async () => {
     if (!project) return;
-    const pExport = { ...project, country: project.country.join(", ") } as any;
+    // Excel exporter expects single string for country? We might need to adjust exporter or join them
+    // Actually the new exporter.ts takes Project which has string[] for country.
+    // But wait, the previous code had a cast: { ...project, country: project.country.join(", ") } as any;
+    // Let's check logic.ts. Project interface has `country: string[]`.
+    // Exporter.ts expects `Project`. 
+    // So we can just pass `project`. 
+    // But verify if Exporter handles array. Yes, "const hds = project.country.map..."
 
-    const buffer = await generateExcel(pExport, language);
-    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${project.name.replace(/\s+/g, '_')}_Timeline.xlsx`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    await exportToExcel(project, language);
   };
 
   // Dictionary
