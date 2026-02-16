@@ -1,25 +1,36 @@
 import { useState, useEffect } from 'react';
-import { calculateSchedule, injectVddTasks } from './lib/logic';
+import { calculateSchedule, injectVddTasks, compressSchedule } from './lib/logic';
 import type { Project, Task } from './lib/logic';
 import { getProjectByTemplateName } from './lib/templates';
 import { generateExcel } from './lib/exporter';
 import { Gantt } from './components/Gantt';
 import { TaskTable } from './components/TaskTable';
-import { Download, Calendar, Settings, List, BarChart3, Globe, ShieldAlert, Menu, X } from 'lucide-react';
+import { Download, Calendar, Settings, List, BarChart3, Globe, ShieldAlert, Menu, X, ChevronDown, Check } from 'lucide-react';
 import Holidays from 'date-holidays';
+import { Toaster, toast } from 'sonner';
+
+// Valid Countries
+const EU27 = ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"];
+const OTHERS = ["US", "BR", "JP"];
+const VALID_COUNTRIES = [...EU27, ...OTHERS].sort();
 
 function App() {
   const [language, setLanguage] = useState<"EN" | "PT">("EN");
   const [project, setProject] = useState<Project | null>(null);
-
-  // UI State
-  // Default to open on desktop, closed on mobile
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
 
   // Settings State
   const [projectName, setProjectName] = useState("Project Alpha");
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [country, setCountry] = useState("US");
+
+  // V2: Multi-Country
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(["US"]);
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+
+  // V2: Milestones
+  const [marketingDate, setMarketingDate] = useState("");
+  const [signingDate, setSigningDate] = useState("");
+
   const [vddEnabled, setVddEnabled] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("Standard Sell-Side M&A");
 
@@ -27,66 +38,90 @@ function App() {
   const [absences, setAbsences] = useState<{ name: string, start: Date, end: Date }[]>([]);
   const [newAbsence, setNewAbsence] = useState({ name: "", start: "", end: "" });
 
-  // Handle Resize to auto-open/close logic if needed, 
-  // but usually simple toggle is enough. We'll stick to manual toggle persistence in session if needed, 
-  // but for now simple state is fine.
+  // Country Toggle Logic
+  const toggleCountry = (code: string) => {
+    if (selectedCountries.includes(code)) {
+      setSelectedCountries(selectedCountries.filter(c => c !== code));
+    } else {
+      setSelectedCountries([...selectedCountries, code]);
+    }
+  };
 
   // Load Template Handler
   const loadTemplate = () => {
     const start = new Date(startDate);
     let p = getProjectByTemplateName(selectedTemplate, start);
     p.name = projectName;
-    p.country = country;
+    p.country = selectedCountries;
     p.vddEnabled = vddEnabled;
 
     if (vddEnabled) {
       p = injectVddTasks(p);
     }
 
-    // Recalculate
+    // Initial Calc
     p = calculateSchedule(p);
-    setProject({ ...p }); // Spread to force refresh
+    setProject({ ...p });
 
-    // On mobile, auto-close sidebar after loading
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false);
     }
+
+    toast.success("Template Loaded");
   };
 
-  // Effect to recalculate when settings change affecting logic (if project loaded)
+  // Effect: Recalculate / Compress
   useEffect(() => {
     if (project) {
       let updated = { ...project };
       updated.startDate = new Date(startDate);
-      updated.country = country;
+      updated.country = selectedCountries;
       updated.name = projectName;
 
-      // VDD Logic: If toggled ON and not present
       if (vddEnabled && !updated.vddEnabled) {
         updated.vddEnabled = true;
         updated = injectVddTasks(updated);
       }
 
-      updated = calculateSchedule(updated); // Assign back result
+      // V2: Compression Logic
+      const mDate = marketingDate ? new Date(marketingDate) : undefined;
+      const sDate = signingDate ? new Date(signingDate) : undefined;
+
+      updated = compressSchedule(updated, mDate, sDate);
       setProject(updated);
+
+      // Alerts check
+      const criticalTasks = updated.tasks.filter(t => t.compressionRatio <= 0.5);
+      if (criticalTasks.length > 0) {
+        // Debounce or just show one warning
+        const prepIssue = criticalTasks.some(t => t.phase.includes("Phase 1"));
+        if (prepIssue) toast.error("Warning: Preparation phase compression critical!", { duration: 5000 });
+        else toast.warning("Warning: Some phases are critically compressed.", { duration: 5000 });
+      }
     }
-  }, [startDate, country, projectName, vddEnabled]); // added dependencies
+  }, [startDate, selectedCountries, projectName, vddEnabled, marketingDate, signingDate]);
 
   const handleTaskUpdate = (tasks: Task[]) => {
     if (!project) return;
     let updated = { ...project, tasks };
-    updated = calculateSchedule(updated);
+    // Also re-run compression if tasks change
+    const mDate = marketingDate ? new Date(marketingDate) : undefined;
+    const sDate = signingDate ? new Date(signingDate) : undefined;
+    updated = compressSchedule(updated, mDate, sDate);
     setProject(updated);
   };
 
   const handleExport = async () => {
     if (!project) return;
-    const buffer = await generateExcel(project, language);
+    // Excel exporter expects single string for country? We might need to adjust exporter or join them
+    const pExport = { ...project, country: project.country.join(", ") } as any;
+
+    const buffer = await generateExcel(pExport, language);
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${project.name.replace(/\s+/g, '_')}_${project.country}_Timeline.xlsx`;
+    a.download = `${project.name.replace(/\s+/g, '_')}_Timeline.xlsx`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -115,11 +150,9 @@ function App() {
     }
   }[language];
 
-  // Country Options
-  const countries = Object.keys(new Holidays().getCountries()).sort();
-
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans overflow-hidden relative">
+      <Toaster position="top-right" richColors />
 
       {/* Mobile Backdrop */}
       {isSidebarOpen && (
@@ -141,13 +174,12 @@ function App() {
           <div className="flex items-center gap-2 font-bold text-xl text-blue-900 truncate">
             <BarChart3 className="shrink-0" /> {txt.title}
           </div>
-          {/* Mobile Close Button */}
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-500">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-4 space-y-6 flex-1 overflow-y-auto">
+        <div className="p-4 space-y-6 flex-1 overflow-y-auto w-80">
           {/* Language */}
           <div className="flex gap-2">
             <button onClick={() => setLanguage("EN")} className={`px-3 py-1 text-xs rounded-full border ${language === "EN" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white text-gray-600"}`}>EN</button>
@@ -168,14 +200,49 @@ function App() {
               <input type="date" className="w-full mt-1 border rounded p-2 text-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-700">Country (Holidays)</label>
-              <select className="w-full mt-1 border rounded p-2 text-sm" value={country} onChange={e => setCountry(e.target.value)}>
-                {countries.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+            {/* Multi-Select Country */}
+            <div className="relative">
+              <label className="text-xs font-medium text-gray-700 block mb-1">Holidays ({selectedCountries.length})</label>
+              <button
+                onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+                className="w-full border rounded p-2 text-sm flex justify-between items-center bg-white"
+              >
+                <span className="truncate">{selectedCountries.join(", ") || "Select Countries"}</span>
+                <ChevronDown size={14} />
+              </button>
+
+              {isCountryDropdownOpen && (
+                <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded mt-1 z-50 max-h-60 overflow-y-auto">
+                  {VALID_COUNTRIES.map(c => (
+                    <div
+                      key={c}
+                      onClick={() => toggleCountry(c)}
+                      className="flex items-center px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0"
+                    >
+                      <div className={`w-4 h-4 border rounded mr-2 flex items-center justify-center ${selectedCountries.includes(c) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                        {selectedCountries.includes(c) && <Check size={10} className="text-white" />}
+                      </div>
+                      <span>{c} {new Holidays().getCountries()[c]}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Optional Milestones */}
+            <div className="pt-2 border-t border-dashed border-gray-200">
+              <span className="text-xs font-bold text-gray-500 mb-2 block">Target Milestones (Optional)</span>
+              <div className="mb-2">
+                <label className="text-xs font-medium text-gray-700">Marketing Launch</label>
+                <input type="date" className="w-full mt-1 border rounded p-2 text-sm" value={marketingDate} onChange={e => setMarketingDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700">Signing Date</label>
+                <input type="date" className="w-full mt-1 border rounded p-2 text-sm" value={signingDate} onChange={e => setSigningDate(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
               <input type="checkbox" id="vdd" checked={vddEnabled} onChange={e => setVddEnabled(e.target.checked)} />
               <label htmlFor="vdd" className="text-sm cursor-pointer select-none">Include VDD?</label>
             </div>
@@ -237,18 +304,16 @@ function App() {
           <>
             <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-20 shrink-0">
               <div className="flex items-center gap-3 overflow-hidden">
-                {/* Toggle Button */}
                 <button
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                   className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
-                  aria-label="Toggle Sidebar"
                 >
                   <Menu size={20} />
                 </button>
 
                 <div className="overflow-hidden">
                   <h1 className="text-lg md:text-2xl font-bold text-gray-800 truncate">{project.name}</h1>
-                  <p className="text-xs text-gray-500 hidden md:block">{project.tasks.length} tasks • {project.country} Holidays</p>
+                  <p className="text-xs text-gray-500 hidden md:block">{project.tasks.length} tasks • {project.country.join(", ")} Holidays</p>
                 </div>
               </div>
 
@@ -256,13 +321,11 @@ function App() {
                 onClick={handleExport}
                 className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded shadow hover:bg-green-700 font-semibold text-xs md:text-sm whitespace-nowrap"
               >
-                <Download size={16} /> <span className="hidden md:inline">{txt.export}</span> <span className="md:hidden">Export</span>
+                <Download size={16} /> <span className="hidden md:inline">{txt.export}</span>
               </button>
             </header>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8">
-
-              {/* Gantt Section */}
               <section>
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <Calendar className="text-blue-600" /> {txt.gantt}
@@ -270,7 +333,6 @@ function App() {
                 <Gantt project={project} absences={absences} />
               </section>
 
-              {/* Tasks Section */}
               <section>
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <List className="text-blue-600" /> {txt.tasks}
@@ -281,7 +343,6 @@ function App() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-4">
-            {/* Empty State Header with Toggle */}
             <div className="absolute top-4 left-4">
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -290,7 +351,6 @@ function App() {
                 <Menu size={20} />
               </button>
             </div>
-
             <div className="flex flex-col items-center text-gray-400 gap-4 text-center">
               <Globe size={64} className="text-gray-200" />
               <p>Open the sidebar <Menu className="inline w-4 h-4" /> and load a template to begin.</p>

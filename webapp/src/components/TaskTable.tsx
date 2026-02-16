@@ -30,7 +30,9 @@ export const TaskTable: React.FC<TaskTableProps> = ({ project, onUpdate }) => {
             phase: "New Phase",
             durationWeeks: 1.0,
             predecessors: [],
-            type: "Standard"
+            type: "Standard",
+            originalDurationWeeks: 1.0,
+            compressionRatio: 1.0
         };
         onUpdate([...project.tasks, newTask]);
     };

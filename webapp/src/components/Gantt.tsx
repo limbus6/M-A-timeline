@@ -17,10 +17,8 @@ const PHASE_COLORS: Record<string, string> = {
     "Phase 4: Closing & Signing": "#8b5cf6", // Violet
 };
 
-// Fallback color generator
 const getColor = (phase: string) => {
     if (PHASE_COLORS[phase]) return PHASE_COLORS[phase];
-    // Simple hash to color
     let hash = 0;
     for (let i = 0; i < phase.length; i++) {
         hash = phase.charCodeAt(i) + ((hash << 5) - hash);
@@ -58,15 +56,30 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
         return { startDate: start, endDate: end, weeks };
     }, [project]);
 
-    // 2. Holiday Logic
-    const hd = new Holidays(project.country);
+    // 2. Holiday Logic (Multi-Calendar)
     const holidayDates = useMemo(() => {
         const res: Date[] = [];
+        const countries = project.country; // Array
+
+        if (!countries || countries.length === 0) return [];
+
+        // Initialize holidays for all selected countries
+        const hds = countries.map(c => {
+            try { return new Holidays(c); } catch { return null; }
+        }).filter(Boolean);
+
         let curr = new Date(startDate);
         while (curr <= endDate) {
-            // Only mark weekdays as holidays for visual clarity
-            const h = hd.isHoliday(curr);
-            if (h && !isWeekend(curr)) {
+            // Check if ANY country has a holiday
+            let isHol = false;
+            for (const hd of hds) {
+                if (hd && hd.isHoliday(curr)) {
+                    isHol = true;
+                    break;
+                }
+            }
+
+            if (isHol && !isWeekend(curr)) {
                 res.push(new Date(curr));
             }
             curr = addDays(curr, 1);
@@ -86,12 +99,10 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
 
                 {/* LEFT COLUMN: Task Names & Legend */}
                 <div className="w-64 flex-none border-r border-gray-200 bg-white z-20 flex flex-col">
-                    {/* Header Spacer */}
                     <div className="h-10 border-b border-gray-200 bg-gray-50 flex items-center px-4 font-bold text-xs text-gray-500">
                         TASK NAME
                     </div>
 
-                    {/* Task List */}
                     <div className="flex-1 overflow-hidden pt-2">
                         {project.tasks.map(t => {
                             if (!t.computedStart || !t.computedEnd) return null;
@@ -105,6 +116,7 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
                                 <div key={t.id} className="h-8 flex items-center px-4 text-xs text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis border-b border-transparent hover:bg-gray-50" title={t.name}>
                                     <span className="w-6 inline-block text-center font-bold text-gray-500">{marker}</span>
                                     <span className="truncate">{t.name}</span>
+                                    {t.compressionRatio <= 0.5 && <span className="ml-2 text-red-500 font-bold" title="Compressed Phase!">⚠️</span>}
                                 </div>
                             );
                         })}
@@ -131,7 +143,6 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
 
                         {/* Background Grid & Holidays */}
                         <div className="absolute top-10 bottom-0 left-0 right-0 z-0">
-                            {/* Holiday Overlays */}
                             {holidayDates.map((d, i) => {
                                 const offset = differenceInDays(d, startDate) * dayWidth;
                                 return (
@@ -144,7 +155,6 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
                                 );
                             })}
 
-                            {/* Absences Overlays */}
                             {absences.map((ab, i) => {
                                 const startOffset = Math.max(0, differenceInDays(ab.start, startDate));
                                 const duration = differenceInDays(ab.end, ab.start) + 1;
@@ -176,26 +186,26 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
                                 const left = startOffset * dayWidth;
                                 const width = Math.max(dayWidth, duration * dayWidth);
 
-                                const bgColor = getColor(t.phase);
+                                // Override color if compressed
+                                let bgColor = getColor(t.phase);
+                                if (t.compressionRatio <= 0.5) {
+                                    bgColor = "#EF4444"; // Red
+                                }
+
                                 const isMarker = ["Milestone", "Key Decision", "Bottleneck", "External Dependency"].includes(t.type);
 
                                 return (
                                     <div key={t.id} className="relative h-8 flex items-center group">
-                                        {/* Bar */}
                                         {!isMarker && (
                                             <div
                                                 className="absolute rounded-sm h-5 text-[10px] flex items-center justify-center text-white shadow-sm opacity-90 hover:opacity-100 transition-opacity"
                                                 style={{ left, width, backgroundColor: bgColor }}
-                                                title={`${t.phase}: ${format(t.computedStart, 'd MMM')} - ${format(t.computedEnd, 'd MMM')}`}
+                                                title={`${t.phase}: ${format(t.computedStart, 'd MMM')} - ${format(t.computedEnd, 'd MMM')} (Ratio: ${t.compressionRatio.toFixed(2)})`}
                                             >
                                                 {width > 60 && <span className="truncate px-1 opacity-70">{t.phase}</span>}
                                             </div>
                                         )}
 
-                                        {/* Marker Point (if it is a marker type, we usually just show the icon in the label, 
-                                       but in the chart we might want a diamond or line. 
-                                       The previous code put the marker IN the name. 
-                                       Let's put a small diamond on the timeline for milestones) */}
                                         {isMarker && (
                                             <div
                                                 className="absolute w-4 h-4 rotate-45 border-2 border-white shadow-sm"
