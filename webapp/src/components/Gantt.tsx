@@ -8,6 +8,27 @@ interface GanttProps {
     absences: { name: string; start: Date; end: Date }[];
 }
 
+// Colors for Phases
+const PHASE_COLORS: Record<string, string> = {
+    "Phase 1: Preparation": "#3b82f6", // Blue
+    "Phase 2: Marketing & Round 1": "#10b981", // Green
+    "Phase 2: Deep Dive & Closing": "#059669", // Darker Green
+    "Phase 3: Confirmatory Due Diligence": "#f59e0b", // Amber
+    "Phase 4: Closing & Signing": "#8b5cf6", // Violet
+};
+
+// Fallback color generator
+const getColor = (phase: string) => {
+    if (PHASE_COLORS[phase]) return PHASE_COLORS[phase];
+    // Simple hash to color
+    let hash = 0;
+    for (let i = 0; i < phase.length; i++) {
+        hash = phase.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+    return '#' + "00000".substring(0, 6 - c.length) + c;
+}
+
 export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
     // 1. Determine Date Range
     const { startDate, endDate, weeks } = useMemo(() => {
@@ -54,102 +75,139 @@ export const Gantt: React.FC<GanttProps> = ({ project, absences }) => {
     }, [startDate, endDate, project.country]);
 
     // 3. Grid sizing
-    // 1 Day = 30px
     const dayWidth = 30;
     const totalDays = differenceInDays(endDate, startDate);
     const totalWidth = totalDays * dayWidth;
 
     return (
-        <div className="overflow-x-auto border rounded-lg bg-white shadow-sm relative">
-            <div style={{ width: totalWidth, minWidth: '100%' }} className="relative bg-white pb-4">
+        <div className="border rounded-lg bg-white shadow-sm overflow-hidden flex flex-col">
+            {/* Main Container: Flex Row */}
+            <div className="flex flex-1 overflow-hidden">
 
-                {/* Header (Weeks) */}
-                <div className="flex border-b border-gray-200 h-10 sticky top-0 bg-white z-10">
-                    {weeks.map((w, i) => (
-                        <div
-                            key={i}
-                            className="border-r border-gray-100 text-xs font-semibold text-gray-500 flex items-center justify-center"
-                            style={{ width: dayWidth * 7 }}
-                        >
-                            {format(w, 'd MMM')}
-                        </div>
-                    ))}
+                {/* LEFT COLUMN: Task Names & Legend */}
+                <div className="w-64 flex-none border-r border-gray-200 bg-white z-20 flex flex-col">
+                    {/* Header Spacer */}
+                    <div className="h-10 border-b border-gray-200 bg-gray-50 flex items-center px-4 font-bold text-xs text-gray-500">
+                        TASK NAME
+                    </div>
+
+                    {/* Task List */}
+                    <div className="flex-1 overflow-hidden pt-2">
+                        {project.tasks.map(t => {
+                            if (!t.computedStart || !t.computedEnd) return null;
+                            let marker = "";
+                            if (t.type === "Milestone") marker = "▲";
+                            else if (t.type === "Key Decision") marker = "★";
+                            else if (t.type === "Bottleneck") marker = "⚠️";
+                            else if (t.type === "External Dependency") marker = "🔗";
+
+                            return (
+                                <div key={t.id} className="h-8 flex items-center px-4 text-xs text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis border-b border-transparent hover:bg-gray-50" title={t.name}>
+                                    <span className="w-6 inline-block text-center font-bold text-gray-500">{marker}</span>
+                                    <span className="truncate">{t.name}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
-                {/* Holiday Overlays (Vertical Lines) */}
-                {holidayDates.map((d, i) => {
-                    const offset = differenceInDays(d, startDate) * dayWidth;
-                    return (
-                        <div
-                            key={i}
-                            className="absolute top-10 bottom-0 bg-gray-100 border-l border-r border-gray-200 opacity-50 z-0 pointer-events-none"
-                            style={{ left: offset, width: dayWidth }}
-                            title="Holiday"
-                        />
-                    );
-                })}
 
-                {/* Absences Overlays */}
-                {absences.map((ab, i) => {
-                    const startOffset = Math.max(0, differenceInDays(ab.start, startDate));
-                    const duration = differenceInDays(ab.end, ab.start) + 1; // inclusive
-                    const left = startOffset * dayWidth;
-                    const width = duration * dayWidth;
+                {/* RIGHT COLUMN: Timeline */}
+                <div className="flex-1 overflow-x-auto relative">
+                    <div style={{ width: totalWidth, minWidth: '100%' }} className="relative bg-white pb-4">
 
-                    if (left + width < 0 || left > totalWidth) return null;
-
-                    return (
-                        <div
-                            key={`ab-${i}`}
-                            className="absolute top-10 bottom-0 bg-red-100 border-l border-r border-red-200 opacity-30 z-0 pointer-events-none flex items-start justify-center pt-2"
-                            style={{ left, width }}
-                        >
-                            <span className="text-xs text-red-600 font-bold -rotate-90 origin-center whitespace-nowrap mt-10">{ab.name}</span>
-                        </div>
-                    );
-                })}
-
-                {/* Tasks */}
-                <div className="pt-2 space-y-2 z-10 relative">
-                    {project.tasks.map(t => {
-                        if (!t.computedStart || !t.computedEnd) return null;
-
-                        const startOffset = differenceInDays(t.computedStart, startDate);
-                        const duration = differenceInDays(t.computedEnd, t.computedStart);
-
-                        const left = startOffset * dayWidth;
-                        const width = Math.max(dayWidth, duration * dayWidth);
-
-                        let colorClass = "bg-[#203764]"; // Dark Blue
-                        let marker = null;
-                        if (t.type === "Milestone") { colorClass = "bg-transparent"; marker = "▲"; }
-                        else if (t.type === "Key Decision") { colorClass = "bg-transparent"; marker = "★"; }
-                        else if (t.type === "Bottleneck") { colorClass = "bg-[#203764]"; marker = "⚠️"; } // Bar + Warning
-                        else if (t.type === "External Dependency") { colorClass = "bg-transparent"; marker = "🔗"; }
-
-                        return (
-                            <div key={t.id} className="relative h-8 flex items-center group">
-                                {/* Bar */}
+                        {/* Header (Weeks) */}
+                        <div className="flex border-b border-gray-200 h-10 sticky top-0 bg-white z-10">
+                            {weeks.map((w, i) => (
                                 <div
-                                    className={`absolute rounded-sm h-6 text-xs flex items-center justify-center text-white ${colorClass} ${marker ? 'text-red-600 font-bold text-lg overflow-visible' : ''}`}
-                                    style={{ left, width }}
-                                    title={`${t.name} (${format(t.computedStart, 'd MMM')} - ${format(t.computedEnd, 'd MMM')})`}
+                                    key={i}
+                                    className="border-r border-gray-100 text-xs font-semibold text-gray-500 flex items-center justify-center"
+                                    style={{ width: dayWidth * 7 }}
                                 >
-                                    {marker ? marker : (width > 50 && <span className="truncate px-1">{t.name}</span>)}
+                                    {format(w, 'd MMM')}
                                 </div>
+                            ))}
+                        </div>
 
-                                {/* Label if not inside bar */}
-                                {(marker || width <= 50) && (
+                        {/* Background Grid & Holidays */}
+                        <div className="absolute top-10 bottom-0 left-0 right-0 z-0">
+                            {/* Holiday Overlays */}
+                            {holidayDates.map((d, i) => {
+                                const offset = differenceInDays(d, startDate) * dayWidth;
+                                return (
                                     <div
-                                        className="absolute text-xs text-gray-700 whitespace-nowrap ml-1"
-                                        style={{ left: left + width }}
+                                        key={`hol-${i}`}
+                                        className="absolute top-0 bottom-0 bg-gray-100 border-l border-r border-gray-200 opacity-50"
+                                        style={{ left: offset, width: dayWidth }}
+                                        title="Holiday"
+                                    />
+                                );
+                            })}
+
+                            {/* Absences Overlays */}
+                            {absences.map((ab, i) => {
+                                const startOffset = Math.max(0, differenceInDays(ab.start, startDate));
+                                const duration = differenceInDays(ab.end, ab.start) + 1;
+                                const left = startOffset * dayWidth;
+                                const width = duration * dayWidth;
+
+                                if (left + width < 0 || left > totalWidth) return null;
+
+                                return (
+                                    <div
+                                        key={`ab-${i}`}
+                                        className="absolute top-0 bottom-0 bg-red-100 border-l border-r border-red-200 opacity-30 flex items-start justify-center pt-2"
+                                        style={{ left, width }}
                                     >
-                                        {t.name}
+                                        <span className="text-xs text-red-600 font-bold -rotate-90 origin-center whitespace-nowrap mt-10">{ab.name}</span>
                                     </div>
-                                )}
-                            </div>
-                        );
-                    })}
+                                );
+                            })}
+                        </div>
+
+                        {/* Tasks Lines */}
+                        <div className="pt-2 z-10 relative">
+                            {project.tasks.map(t => {
+                                if (!t.computedStart || !t.computedEnd) return null;
+
+                                const startOffset = differenceInDays(t.computedStart, startDate);
+                                const duration = differenceInDays(t.computedEnd, t.computedStart);
+
+                                const left = startOffset * dayWidth;
+                                const width = Math.max(dayWidth, duration * dayWidth);
+
+                                const bgColor = getColor(t.phase);
+                                const isMarker = ["Milestone", "Key Decision", "Bottleneck", "External Dependency"].includes(t.type);
+
+                                return (
+                                    <div key={t.id} className="relative h-8 flex items-center group">
+                                        {/* Bar */}
+                                        {!isMarker && (
+                                            <div
+                                                className="absolute rounded-sm h-5 text-[10px] flex items-center justify-center text-white shadow-sm opacity-90 hover:opacity-100 transition-opacity"
+                                                style={{ left, width, backgroundColor: bgColor }}
+                                                title={`${t.phase}: ${format(t.computedStart, 'd MMM')} - ${format(t.computedEnd, 'd MMM')}`}
+                                            >
+                                                {width > 60 && <span className="truncate px-1 opacity-70">{t.phase}</span>}
+                                            </div>
+                                        )}
+
+                                        {/* Marker Point (if it is a marker type, we usually just show the icon in the label, 
+                                       but in the chart we might want a diamond or line. 
+                                       The previous code put the marker IN the name. 
+                                       Let's put a small diamond on the timeline for milestones) */}
+                                        {isMarker && (
+                                            <div
+                                                className="absolute w-4 h-4 rotate-45 border-2 border-white shadow-sm"
+                                                style={{ left: left + (width / 2) - 8, backgroundColor: bgColor }}
+                                                title={`${t.type} (${format(t.computedStart, 'd MMM')})`}
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
