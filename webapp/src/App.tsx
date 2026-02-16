@@ -5,12 +5,16 @@ import { getProjectByTemplateName } from './lib/templates';
 import { generateExcel } from './lib/exporter';
 import { Gantt } from './components/Gantt';
 import { TaskTable } from './components/TaskTable';
-import { Download, Calendar, Settings, List, BarChart3, Globe, ShieldAlert } from 'lucide-react';
+import { Download, Calendar, Settings, List, BarChart3, Globe, ShieldAlert, Menu, X } from 'lucide-react';
 import Holidays from 'date-holidays';
 
 function App() {
   const [language, setLanguage] = useState<"EN" | "PT">("EN");
   const [project, setProject] = useState<Project | null>(null);
+
+  // UI State
+  // Default to open on desktop, closed on mobile
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768);
 
   // Settings State
   const [projectName, setProjectName] = useState("Project Alpha");
@@ -22,6 +26,10 @@ function App() {
   // Absences State
   const [absences, setAbsences] = useState<{ name: string, start: Date, end: Date }[]>([]);
   const [newAbsence, setNewAbsence] = useState({ name: "", start: "", end: "" });
+
+  // Handle Resize to auto-open/close logic if needed, 
+  // but usually simple toggle is enough. We'll stick to manual toggle persistence in session if needed, 
+  // but for now simple state is fine.
 
   // Load Template Handler
   const loadTemplate = () => {
@@ -38,6 +46,11 @@ function App() {
     // Recalculate
     p = calculateSchedule(p);
     setProject({ ...p }); // Spread to force refresh
+
+    // On mobile, auto-close sidebar after loading
+    if (window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
   };
 
   // Effect to recalculate when settings change affecting logic (if project loaded)
@@ -81,7 +94,7 @@ function App() {
   // Dictionary
   const txt = {
     EN: {
-      title: "M&A Timeline Generator",
+      title: "M&A Timeline",
       settings: "Settings",
       load: "Load Template",
       export: "Export Excel",
@@ -91,7 +104,7 @@ function App() {
       addAbsence: "Add"
     },
     PT: {
-      title: "Gerador de Cronograma M&A",
+      title: "Cronograma M&A",
       settings: "Configurações",
       load: "Carregar Modelo",
       export: "Exportar Excel",
@@ -106,17 +119,35 @@ function App() {
   const countries = Object.keys(new Holidays().getCountries()).sort();
 
   return (
-    <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
+    <div className="flex h-screen bg-gray-50 text-gray-900 font-sans overflow-hidden relative">
+
+      {/* Mobile Backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-gray-200 flex flex-col h-full overflow-y-auto">
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex items-center gap-2 font-bold text-xl text-blue-900">
-            <BarChart3 /> {txt.title}
+      <aside
+        className={`
+            fixed md:relative z-40 h-full bg-white border-r border-gray-200 flex flex-col
+            transition-all duration-300 ease-in-out
+            ${isSidebarOpen ? 'translate-x-0 w-80' : '-translate-x-full w-0 md:translate-x-0 md:w-0 md:overflow-hidden'}
+        `}
+      >
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+          <div className="flex items-center gap-2 font-bold text-xl text-blue-900 truncate">
+            <BarChart3 className="shrink-0" /> {txt.title}
           </div>
+          {/* Mobile Close Button */}
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-500">
+            <X size={20} />
+          </button>
         </div>
 
-        <div className="p-4 space-y-6 flex-1">
+        <div className="p-4 space-y-6 flex-1 overflow-y-auto">
           {/* Language */}
           <div className="flex gap-2">
             <button onClick={() => setLanguage("EN")} className={`px-3 py-1 text-xs rounded-full border ${language === "EN" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white text-gray-600"}`}>EN</button>
@@ -146,7 +177,7 @@ function App() {
 
             <div className="flex items-center gap-2">
               <input type="checkbox" id="vdd" checked={vddEnabled} onChange={e => setVddEnabled(e.target.checked)} />
-              <label htmlFor="vdd" className="text-sm cursor-pointer select-none">Include Vendor Due Diligence?</label>
+              <label htmlFor="vdd" className="text-sm cursor-pointer select-none">Include VDD?</label>
             </div>
 
             <div>
@@ -201,23 +232,35 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
+      <main className="flex-1 flex flex-col h-full overflow-hidden w-full">
         {project ? (
           <>
-            <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-20">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
-                <p className="text-xs text-gray-500">{project.tasks.length} tasks • {project.country} Holidays</p>
+            <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-20 shrink-0">
+              <div className="flex items-center gap-3 overflow-hidden">
+                {/* Toggle Button */}
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+                  aria-label="Toggle Sidebar"
+                >
+                  <Menu size={20} />
+                </button>
+
+                <div className="overflow-hidden">
+                  <h1 className="text-lg md:text-2xl font-bold text-gray-800 truncate">{project.name}</h1>
+                  <p className="text-xs text-gray-500 hidden md:block">{project.tasks.length} tasks • {project.country} Holidays</p>
+                </div>
               </div>
+
               <button
                 onClick={handleExport}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded shadow hover:bg-green-700 font-semibold text-sm"
+                className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded shadow hover:bg-green-700 font-semibold text-xs md:text-sm whitespace-nowrap"
               >
-                <Download size={16} /> {txt.export}
+                <Download size={16} /> <span className="hidden md:inline">{txt.export}</span> <span className="md:hidden">Export</span>
               </button>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8">
 
               {/* Gantt Section */}
               <section>
@@ -237,9 +280,21 @@ function App() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400 flex-col gap-4">
-            <Globe size={64} className="text-gray-200" />
-            <p>Select a template and click "Load Template" to begin.</p>
+          <div className="flex-1 flex flex-col items-center justify-center p-4">
+            {/* Empty State Header with Toggle */}
+            <div className="absolute top-4 left-4">
+              <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+              >
+                <Menu size={20} />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center text-gray-400 gap-4 text-center">
+              <Globe size={64} className="text-gray-200" />
+              <p>Open the sidebar <Menu className="inline w-4 h-4" /> and load a template to begin.</p>
+            </div>
           </div>
         )}
       </main>

@@ -42,7 +42,7 @@ export const TaskTable: React.FC<TaskTableProps> = ({ project, onUpdate }) => {
     };
 
     return (
-        <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+        <div className="border rounded-lg overflow-x-auto bg-white shadow-sm">
             <table className="w-full text-sm text-left">
                 <thead className="bg-gray-50 text-gray-700 font-semibold border-b">
                     <tr>
