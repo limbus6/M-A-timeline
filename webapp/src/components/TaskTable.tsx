@@ -48,6 +48,7 @@ export const TaskTable: React.FC<TaskTableProps> = ({ project, onUpdate }) => {
             <table className="w-full text-sm text-left">
                 <thead className="bg-gray-50 text-gray-700 font-semibold border-b">
                     <tr>
+                        <th className="p-3 w-10 text-center">#</th>
                         <th className="p-3 w-16">ID</th>
                         <th className="p-3 w-32">Phase</th>
                         <th className="p-3">Task Name</th>
@@ -60,6 +61,9 @@ export const TaskTable: React.FC<TaskTableProps> = ({ project, onUpdate }) => {
                 <tbody className="divide-y divide-gray-100">
                     {project.tasks.map((task, i) => (
                         <tr key={i} className="hover:bg-gray-50 group">
+                            <td className="p-2 text-center text-gray-500 font-mono text-xs">
+                                {task.serialNumber}
+                            </td>
                             <td className="p-2">
                                 <input
                                     className="w-full bg-transparent border-none focus:ring-1 rounded px-1"

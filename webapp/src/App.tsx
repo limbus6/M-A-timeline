@@ -47,6 +47,9 @@ function App() {
     }
   };
 
+  const selectAllCountries = () => setSelectedCountries(VALID_COUNTRIES);
+  const deselectAllCountries = () => setSelectedCountries([]);
+
   // Load Template Handler
   const loadTemplate = () => {
     const start = new Date(startDate);
@@ -113,7 +116,6 @@ function App() {
 
   const handleExport = async () => {
     if (!project) return;
-    // Excel exporter expects single string for country? We might need to adjust exporter or join them
     const pExport = { ...project, country: project.country.join(", ") } as any;
 
     const buffer = await generateExcel(pExport, language);
@@ -154,7 +156,7 @@ function App() {
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans overflow-hidden relative">
       <Toaster position="top-right" richColors />
 
-      {/* Mobile Backdrop */}
+      {/* Mobile Sidebar Backdrop */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 md:hidden"
@@ -162,24 +164,24 @@ function App() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar - FIXED & Mobile Optimized */}
       <aside
         className={`
-            fixed md:relative z-40 h-full bg-white border-r border-gray-200 flex flex-col
-            transition-all duration-300 ease-in-out
-            ${isSidebarOpen ? 'translate-x-0 w-80' : '-translate-x-full w-0 md:translate-x-0 md:w-0 md:overflow-hidden'}
+            fixed md:relative top-0 bottom-0 left-0 bg-white border-r border-gray-200 flex flex-col z-40
+            transform transition-transform duration-300 ease-in-out w-[85vw] md:w-80
+            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0 md:border-r-0 md:overflow-hidden'}
         `}
       >
-        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
           <div className="flex items-center gap-2 font-bold text-xl text-blue-900 truncate">
             <BarChart3 className="shrink-0" /> {txt.title}
           </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-500">
-            <X size={20} />
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-500 hover:text-red-500">
+            <X size={24} />
           </button>
         </div>
 
-        <div className="p-4 space-y-6 flex-1 overflow-y-auto w-80">
+        <div className="p-4 space-y-6 flex-1 overflow-y-auto">
           {/* Language */}
           <div className="flex gap-2">
             <button onClick={() => setLanguage("EN")} className={`px-3 py-1 text-xs rounded-full border ${language === "EN" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white text-gray-600"}`}>EN</button>
@@ -202,12 +204,19 @@ function App() {
 
             {/* Multi-Select Country */}
             <div className="relative">
-              <label className="text-xs font-medium text-gray-700 block mb-1">Holidays ({selectedCountries.length})</label>
+              <div className="flex justify-between items-end mb-1">
+                <label className="text-xs font-medium text-gray-700">Holidays ({selectedCountries.length})</label>
+                <div className="flex gap-1">
+                  <button onClick={selectAllCountries} className="text-[10px] text-blue-600 hover:underline">All</button>
+                  <span className="text-gray-300">|</span>
+                  <button onClick={deselectAllCountries} className="text-[10px] text-blue-600 hover:underline">None</button>
+                </div>
+              </div>
               <button
                 onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
                 className="w-full border rounded p-2 text-sm flex justify-between items-center bg-white"
               >
-                <span className="truncate">{selectedCountries.join(", ") || "Select Countries"}</span>
+                <span className="truncate">{selectedCountries.join(", ") || "None"}</span>
                 <ChevronDown size={14} />
               </button>
 
@@ -219,7 +228,7 @@ function App() {
                       onClick={() => toggleCountry(c)}
                       className="flex items-center px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0"
                     >
-                      <div className={`w-4 h-4 border rounded mr-2 flex items-center justify-center ${selectedCountries.includes(c) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                      <div className={`w-4 h-4 border rounded mr-2 flex items-center justify-center shrink-0 ${selectedCountries.includes(c) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
                         {selectedCountries.includes(c) && <Check size={10} className="text-white" />}
                       </div>
                       <span>{c} {new Holidays().getCountries()[c]}</span>
@@ -258,7 +267,7 @@ function App() {
 
             <button
               onClick={loadTemplate}
-              className="w-full bg-blue-900 text-white py-2 rounded text-sm font-semibold hover:bg-blue-800 transition-colors"
+              className="w-full bg-blue-900 text-white py-2 rounded text-sm font-semibold hover:bg-blue-800 transition-colors shadow-sm"
             >
               {txt.load}
             </button>
@@ -299,7 +308,7 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden w-full">
+      <main className="flex-1 flex flex-col h-full overflow-hidden w-full relative">
         {project ? (
           <>
             <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-20 shrink-0">
@@ -321,11 +330,11 @@ function App() {
                 onClick={handleExport}
                 className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded shadow hover:bg-green-700 font-semibold text-xs md:text-sm whitespace-nowrap"
               >
-                <Download size={16} /> <span className="hidden md:inline">{txt.export}</span>
+                <Download size={16} /> <span className="hidden md:inline">{txt.export}</span> <span className="md:hidden">Export</span>
               </button>
             </header>
 
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8 bg-gray-50">
               <section>
                 <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                   <Calendar className="text-blue-600" /> {txt.gantt}
@@ -343,10 +352,11 @@ function App() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center p-4">
-            <div className="absolute top-4 left-4">
+            <div className="absolute top-4 left-4 z-50">
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+                className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 bg-white shadow-sm border"
+                aria-label="Toggle Sidebar"
               >
                 <Menu size={20} />
               </button>
